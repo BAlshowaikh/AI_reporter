@@ -4,6 +4,7 @@ from enum import Enum
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 import os, hashlib
+from dotenv import load_dotenv
 
 class ConfigError(ValueError):
     """
@@ -24,7 +25,7 @@ class Settings:
     max_items: int
     timezone: str
     seed_mode: SeedMode # This will be whatever elements in the enum (just one of them)
-    fixed_seed: Optional[int] 
+    # fixed_seed: Optional[int] 
 
 # Functions to parse the env file variables 
 # These functions will read a specific environment variable, validate its content, and convert it into the correct Python type.
@@ -74,7 +75,7 @@ def parse_max_items(env: Mapping[str, str]) -> int:
     try:
         value = int(max_item_value)
     except(TypeError, ValueError):
-            raise ConfigError(f"MAX_ITEMS must be a positive integer but got {value}.")
+            raise ConfigError(f"MAX_ITEMS must be a positive integer but got {max_item_value}.")
     
     if value <= 0:
         raise ConfigError(f"MAX_ITEMS must be a positive integer (got: '{value}').")
@@ -123,10 +124,10 @@ def parse_seed_mode(env: Mapping[str, str]) -> SeedMode:
     mode = str(seed_mode_value).strip().lower() if seed_mode_value is not None else "today"
 
     # Check the seed mode 
-    if mode == "TODAY":
+    if mode == "today":
         return SeedMode.TODAY
 
-    if mode == "FIXED":
+    if mode == "fixed":
         return SeedMode.FIXED
     
     raise ConfigError(f"RANDOM_SEED_MODE must be 'today' or 'fixed' (got: '{mode}').")
@@ -143,10 +144,74 @@ def parse_fixed_seed(env: Mapping[str, str], mode: SeedMode) -> Optional[int]:
     else:
         # Read the vars
         fixed_seed_key = "FIXED_RANDOM_SEED"
-        fixed_seed_value = int(env.get(fixed_seed_key))
+        fixed_seed_value = env.get(fixed_seed_key)
         if fixed_seed_value is None or str(fixed_seed_value).strip() == "":
             raise ConfigError("FIXED_RANDOM_SEED is required when RANDOM_SEED_MODE=fixed.")
     try:
         return int(fixed_seed_value)
     except (TypeError, ValueError):
         raise ConfigError(f"FIXED_RANDOM_SEED must be an integer (got: '{fixed_seed_value}').")
+    
+# Function to retreive the currnt day
+def today_seed(tz: str) -> int:
+
+    # Extract the date from the current time zone 
+    today = datetime.now(ZoneInfo(tz)).date()
+
+    # Convert the date object into an ISO standardized string using .isoformat
+    string = today.isoformat()
+
+    # Convert the string into a byte sequence
+    byte_seq =  string.encode("utf-8")
+
+    # Convert the byte sequence into a hash value
+    # And only take teh first 8 bytes (becuase the most used size is 64 bits)
+    hashed = hashlib.sha256(byte_seq).digest()[:8]
+
+    # Convert the hashed into an int
+    # "big": Specifies the byte order, "Big-endian" means the most significant byte is at the beginning of the sequence
+    # signed=False: This specifies that the integer is unsigned (non-negative).
+    hashed_int = int.from_bytes(hashed, "big", signed=False)
+    return hashed_int
+
+# Test the method 
+# Below code mean only run the code inside this file if the script is executed directly using python <filename>
+# If this file is imported in another file the statment will become false and the code won't execute
+if __name__ == "__main__":
+    print(today_seed("Asia/Bahrain"))
+
+# Define a function to return the actual seed (Fixed or today)
+# By checking the settings' object attributes
+def effective_seed(settings):
+    if settings.seed_mode == "TODAY":
+        # Compute teh today seed
+        return today_seed(settings.timezone)
+    elif settings.seed_mode == "FIXED":
+        return settings.fixed_seed
+
+
+# Create a function to gather all the setting's info
+# This function will return a Settings object having all the attributes with values
+def load_settings() -> Settings:
+    try:
+        # Search for a .env file in the project folder and tries to load its variables if possible
+        load_dotenv()
+    except Exception:
+        pass
+
+    # The env variables will go to the environment varibels  
+    env = os.environ
+
+    # Parse the variables in order, Each parser needs access to the mapping to fetch its own key:
+    feed_urls = parse_feed_urls(env)
+    max_items = parse_max_items(env)
+    timezone  = parse_timezone(env)
+    seed_mode = parse_seed_mode(env)
+
+    return Settings(
+        feed_urls=feed_urls,
+        max_items=max_items,
+        timezone=timezone,
+        seed_mode=seed_mode,
+    )
+
