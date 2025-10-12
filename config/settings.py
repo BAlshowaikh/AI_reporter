@@ -183,10 +183,10 @@ if __name__ == "__main__":
 # Define a function to return the actual seed (Fixed or today)
 # By checking the settings' object attributes
 def effective_seed(settings):
-    if settings.seed_mode == "TODAY":
+    if settings.seed_mode == SeedMode.TODAY:
         # Compute teh today seed
         return today_seed(settings.timezone)
-    elif settings.seed_mode == "FIXED":
+    elif settings.seed_mode == SeedMode.FIXED:
         return settings.fixed_seed
 
 
